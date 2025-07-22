@@ -176,6 +176,8 @@ class NodeConfig {
     std::string get_alias();
 
     std::string get_action();
+    
+    void set_action(const std::string &action);
 
     nlohmann::json to_json();
 

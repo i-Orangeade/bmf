@@ -181,6 +181,90 @@ void Graph::init(
 
 }
 
+int Graph::dynamic_add(const NodeConfig &node_config) {
+    GraphConfig temp_config; 
+    temp_config.nodes.push_back(node_config);
+    return update(temp_config);
+}
+
+int Graph::dynamic_remove(const std::string &alias) {
+    NodeConfig temp_node;
+    temp_node.alias = alias;
+    temp_node.set_action("remove");
+    GraphConfig temp_config;
+    temp_config.nodes.push_back(temp_node);
+    return update(temp_config);
+}
+
+int Graph::dynamic_reset(const NodeConfig &node_config) {
+    NodeConfig temp_node = node_config;
+    temp_node.set_action("reset");
+    GraphConfig temp_config;
+    temp_config.nodes.push_back(temp_node);
+    return update(temp_config);
+}
+
+int Graph::update(const std::string &graph_config_json) {
+    // Convert JSON string to nlohmann::json object
+    nlohmann::json graph_json;
+    try {
+        graph_json = nlohmann::json::parse(graph_config_json);
+    } catch (const std::exception &e) {
+        std::cerr << "[Graph::update] Failed to parse config json: " << e.what() << std::endl;
+        return -1;
+    }
+
+    // Use GraphConfig constructor and call init method to load config data
+    GraphConfig update_config(graph_json);
+
+    return update(update_config);
+}
+
+int Graph::update(GraphConfig update_config) {
+    BMFLOG(BMF_INFO) << "dynamic update start: " << update_config.to_json().dump();
+
+    JsonParam option = update_config.get_option();
+    std::vector<JsonParam> nodes_opt;
+    option.get_object_list("nodes", nodes_opt);
+
+    std::vector<NodeConfig> nodes_add;
+    std::vector<NodeConfig> nodes_remove;
+    std::vector<NodeConfig> nodes_reset;
+
+    for (auto &node_config : update_config.get_nodes()) {
+        std::string action = node_config.get_action();
+        if (action == "add")
+            nodes_add.push_back(node_config);
+        else if (action == "remove")
+            nodes_remove.push_back(node_config);
+        else if (action == "reset")
+            nodes_reset.push_back(node_config);
+    }
+
+    // Dynamically add nodes
+    if (nodes_add.size()) {
+        for (auto &node_config : nodes_add) {
+            dynamic_add(node_config);
+        }
+    }
+
+    // Dynamically remove nodes
+    if (nodes_remove.size()) {
+        for (auto &node_config : nodes_remove) {
+            dynamic_remove(node_config.get_alias()); 
+        }
+    }
+
+    // Dynamically reset nodes
+    if (nodes_reset.size()) {
+        for (auto &node_config : nodes_reset) {
+            dynamic_reset(node_config);
+        }
+    }
+
+    return 0;
+}
+
 int Graph::get_hungry_check_func(std::shared_ptr<Node> &root_node,
                                  int output_idx,
                                  std::shared_ptr<Node> &curr_node) {

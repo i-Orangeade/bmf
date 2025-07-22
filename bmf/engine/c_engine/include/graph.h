@@ -130,6 +130,14 @@ class Graph {
 
     bmf::GraphRunningInfo status();
 
+    int dynamic_add(const NodeConfig &node_config); 
+
+    int dynamic_remove(const std::string &alias);
+
+    int dynamic_reset(const NodeConfig &node_config);
+    
+    int update(const std::string &graph_config_json);
+
   private:
     // visible to monitor.
     friend class RunningInfoCollector;
