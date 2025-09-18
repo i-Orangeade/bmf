@@ -101,6 +101,13 @@ class Graph {
 
     int update(GraphConfig update_config);
 
+    int dynamic_add_node(GraphConfig &node_config);
+  
+    int dynamic_remove_node(GraphConfig &node_config);
+    
+    int dynamic_reset_node(GraphConfig &node_config);
+
+
     bool all_nodes_done();
 
     int get_scheduler();
