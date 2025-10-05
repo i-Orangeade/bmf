@@ -1218,9 +1218,8 @@ int Graph::update(const bmf_sdk::JsonParam& update_config) {
         }
 
         // 调用底层 update（传递完整 config）
-        bmf_engine::GraphConfig graph_cfg(new_update_config.json_value_);
-        std::string config_str = graph_cfg.to_json().dump();
-        BMFLOG(BMF_INFO) << "[update] 底层配置: " << config_str;
+        std::string config_str = new_update_config.json_value_.dump();
+        BMFLOG(BMF_INFO) << "[update] 底层配置(原始 JSON): " << config_str;
 
         graph_->graphInstance_->update(config_str, false);
         BMFLOG(BMF_INFO) << "[update] 成功";
