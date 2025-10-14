@@ -1,4 +1,3 @@
-#include <fstream>
 #include <chrono>
 #include <thread>
 #include "gtest/gtest.h"
@@ -14,11 +13,11 @@ TEST(cpp_dynamic_reset, reset_pass_through_node) {
     const std::string input_file = "../../files/big_bunny_10s_30fps.mp4";
     BMF_CPP_FILE_REMOVE(output_file); 
 
-    // 2. 创建主图
+    // 1. 创建主图
     nlohmann::json graph_para = {{"dump_graph", 1}};
     auto main_graph = bmf::builder::Graph(bmf::builder::NormalMode,
                                           bmf_sdk::JsonParam(graph_para));
-    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 主图创建完成（NormalMode）";
+    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 主图创建完成";
 
     // 3. 添加解码器节点
     nlohmann::json decode_para = {
@@ -30,32 +29,30 @@ TEST(cpp_dynamic_reset, reset_pass_through_node) {
     auto audio_stream = decoder_node["audio"];  // 提取音频流
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 解码器节点创建完成：alias=decoder0";
 
-    // 4. 添加待重置的 PassThrough 节点（关键：匹配 Graph::Module API）
+    // 3. 添加待重置 PassThrough 节点
     std::vector<bmf::builder::Stream> pass_through_inputs = {video_stream, audio_stream};
-    // 4.2 构造节点参数（仅需别名，其他参数通过 Module 函数参数传递）
-    nlohmann::json pass_through_para = {};  // 无额外参数，空JSON即可
-    // 4.3 调用 Graph::Module（严格匹配参数顺序和类型）
+    nlohmann::json pass_through_para = {}; 
     bmf_sdk::JsonParam pass_through_option(nlohmann::json::object());
-    const std::string python_module_dir = "../../../bmf/test/dynamical_graph";
+    const std::string python_module_dir = "../../../bmf/test/dynamical_graph";   
     auto pass_through_node = main_graph.Module(
         pass_through_inputs, 
-        "pass_through",                     
-        bmf::builder::ModuleType::CPP,  
-        pass_through_option,     
-        "reset_pass_through",               
-        "",                                 
-        "",                                 
+        "reset_pass_through",                     
+        bmf::builder::ModuleType::Python,      
+        pass_through_option,  
+        "reset_pass_through",  
+        python_module_dir,             
+        "",                                                     
         bmf::builder::InputManagerType::Immediate, 
         0                                  
     );
-    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 待重置节点创建完成：alias=reset_pass_through";
+    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 待重置节点创建完成";
 
     // 5. 非阻塞启动图（对应 Python 层 run_wo_block，匹配 Graph::Start API）
     main_graph.Start(true, true);  // 参数1：dump_graph（true=打印图配置），参数2：needMerge（true=合并配置）
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 图非阻塞启动，等待20ms确保节点初始化";
     std::this_thread::sleep_for(std::chrono::milliseconds(20)); 
 
-    // 6. 构造动态重置配置（严格匹配 dynamic_reset_node 要求：必须包含 alias 定位节点）
+    // 5. 构造动态重置配置
     nlohmann::json reset_config = {
         {"alias", "reset_pass_through"}, 
         {"output_path", output_file},     
@@ -70,14 +67,21 @@ TEST(cpp_dynamic_reset, reset_pass_through_node) {
     bmf_sdk::JsonParam reset_config_param(reset_config);
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 动态重置配置:\n" << reset_config.dump(2);
 
-    // 7. 执行动态重置（调用 Graph::dynamic_reset_node API，非阻塞）
-    int reset_ret = main_graph.dynamic_reset_node(reset_config_param);
-    if (reset_ret != 0) {
-        BMFLOG(BMF_ERROR) << "[cpp_dynamic_reset] 动态重置调用失败，返回码：" << reset_ret;
+    nlohmann::json reset_update_config = main_graph.dynamic_reset_node(reset_config_param);
+    if (reset_update_config.is_null()) {
+        BMFLOG(BMF_ERROR) << "[cpp_dynamic_reset] 动态重置配置生成失败";
+        FAIL() << "动态重置配置生成失败";
+    }
+
+    // 执行实际的更新操作
+    int update_ret = main_graph.update(bmf_sdk::JsonParam(reset_update_config));
+    if (update_ret != 0) {
+        BMFLOG(BMF_ERROR) << "[cpp_dynamic_reset] 动态重置调用失败，返回码：" << update_ret;
         FAIL() << "动态重置节点调用失败";
     }
-    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 动态重置指令已发送，等待2秒确保处理完成";
-    std::this_thread::sleep_for(std::chrono::seconds(2));  // 等待重置后数据处理
+    
+    BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 动态重置指令已发送，等待1秒确保处理完成";
+    std::this_thread::sleep_for(std::chrono::seconds(1));   
 
     // 8. 关闭图（释放资源，匹配 Graph::Close API）
     int close_ret = main_graph.Close();

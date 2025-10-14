@@ -625,7 +625,7 @@ class BMF_ENGINE_API Graph {
 
     int dynamic_remove_node(const bmf_sdk::JsonParam& node_config);
 
-    int dynamic_reset_node(const bmf_sdk::JsonParam& node_config);
+    nlohmann::json dynamic_reset_node(const bmf_sdk::JsonParam& node_config);
 
   private:
     friend class Stream;

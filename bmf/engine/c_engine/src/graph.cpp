@@ -905,38 +905,6 @@ int Graph::dynamic_remove_node(GraphConfig &node_config) {
     return ret;
 }
 
-int Graph::dynamic_reset_node(GraphConfig &node_config) {
-    if (node_config.get_nodes().empty()) {
-        BMFLOG(BMF_ERROR) << "dynamic_reset_node: empty nodes";
-        return -1;
-    }
-
-    NodeConfig reset_node_cfg = node_config.get_nodes()[0];
-    reset_node_cfg.action = "reset";
-
-    if (reset_node_cfg.get_id() == -1 && reset_node_cfg.get_alias().empty()) {
-        BMFLOG(BMF_ERROR) << "dynamic_reset_node: must have id or alias";
-        return -1;
-    }
-
-    GraphConfig update_cfg;
-    update_cfg.nodes = {reset_node_cfg};
-    update_cfg.option.json_value_ = json::object();
-    update_cfg.option.json_value_["nodes"] = json::array({reset_node_cfg.to_json()});
-
-    BMFLOG(BMF_INFO) << "[DEBUG] dynamic_reset_node JSON:\n" 
-                     << update_cfg.option.json_value_.dump(4);
-
-    int ret = this->update(update_cfg);
-    if (ret == 0)
-        BMFLOG(BMF_INFO) << "dynamic_reset_node success: node_id=" << reset_node_cfg.get_id()
-                         << ", alias=" << reset_node_cfg.get_alias();
-    else
-        BMFLOG(BMF_ERROR) << "dynamic_reset_node failed: node_id=" << reset_node_cfg.get_id()
-                          << ", alias=" << reset_node_cfg.get_alias() << ", ret=" << ret;
-
-    return ret;
-}
 
 bool Graph::all_nodes_done() {
     for (auto &node_iter : nodes_) {
