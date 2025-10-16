@@ -47,7 +47,7 @@ TEST(cpp_dynamic_reset, reset_pass_through_node) {
     );
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 待重置节点创建完成";
 
-    // 5. 非阻塞启动图（对应 Python 层 run_wo_block，匹配 Graph::Start API）
+    // 4. 非阻塞启动图（对应 Python 层 run_wo_block，匹配 Graph::Start API）
     main_graph.Start(true, true);  // 参数1：dump_graph（true=打印图配置），参数2：needMerge（true=合并配置）
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 图非阻塞启动，等待20ms确保节点初始化";
     std::this_thread::sleep_for(std::chrono::milliseconds(20)); 
@@ -83,7 +83,7 @@ TEST(cpp_dynamic_reset, reset_pass_through_node) {
     BMFLOG(BMF_INFO) << "[cpp_dynamic_reset] 动态重置指令已发送，等待1秒确保处理完成";
     std::this_thread::sleep_for(std::chrono::seconds(1));   
 
-    // 8. 关闭图（释放资源，匹配 Graph::Close API）
+    // 6. 关闭图（释放资源，匹配 Graph::Close API）
     int close_ret = main_graph.Close();
     if (close_ret != 0) {
         BMFLOG(BMF_ERROR) << "[cpp_dynamic_reset] 图关闭失败，返回码：" << close_ret;
