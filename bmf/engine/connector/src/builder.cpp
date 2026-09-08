@@ -15,6 +15,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -133,7 +134,7 @@ nlohmann::json RealNode::NodeMetaInfo::Dump() {
     nlohmann::json info;
 
     info["premodule_id"] = preModuleUID_;
-    info["callback_binding"] = 
+    info["callback_binding"] =
         nlohmann::json(std::vector<std::string>());
     for (auto &kv : callbackBinding_) {
         info["callback_binding"].push_back(
@@ -439,24 +440,143 @@ int RealGraph::Run(bool dumpGraph, bool needMerge) {
     return graphInstance_->close();
 }
 
-int RealGraph::Update(std::shared_ptr<RealGraph> update_graph) {
+int RealGraph::Update(const std::shared_ptr<RealGraph> &update_graph) {
     if (!update_graph) {
         throw std::logic_error("Update graph is null.");
     }
-    std::string config_str = to_string(update_graph->Dump());
-    graphInstance_->update(config_str, false);
-    return 0;
-}
-
-void RealGraph::DynamicReset(const bmf_sdk::JsonParam& node_config) {
-    if (!node_config.json_value_.is_object() || !node_config.json_value_.contains("alias")) {
-        throw std::logic_error("Invalid configuration: missing alias.");
+    if (update_graph.get() == this) {
+        throw std::logic_error(
+            "The update graph must be different from the running graph.");
+    }
+    if (!graphInstance_) {
+        throw std::logic_error(
+            "Could not update a graph before it has been instantiated.");
     }
 
-    std::string alias = node_config.json_value_["alias"];
-    auto reset_node = AddModule(alias, bmf_sdk::JsonParam(node_config.json_value_),
-                               {}, "", CPP, "", "", Immediate, 0);
+    auto config = update_graph->Dump();
+    if (config["nodes"].empty()) {
+        throw std::logic_error("The update graph contains no dynamic action.");
+    }
 
+    if (next_dynamic_node_id_ < 0) {
+        next_dynamic_node_id_ = 0;
+        for (const auto &node : nodes_)
+            next_dynamic_node_id_ =
+                std::max(next_dynamic_node_id_, node->id_ + 1);
+    }
+
+    // A RealGraph allocates node ids locally. Dynamic additions, however, are
+    // inserted into another graph and must not reuse ids from that graph.
+    for (auto &node : config["nodes"]) {
+        if (node.value("action", std::string()) == "add")
+            node["id"] = next_dynamic_node_id_++;
+    }
+
+    return graphInstance_->update(config.dump(), false);
+}
+
+void RealGraph::DynamicAdd(const std::shared_ptr<RealNode> &module_node,
+                           const bmf_sdk::JsonParam &inputs,
+                           const bmf_sdk::JsonParam &outputs) {
+    if (!module_node || module_node->graph_.lock().get() != this) {
+        throw std::logic_error(
+            "The module node does not belong to this update graph.");
+    }
+    if (nodes_.empty()) {
+        throw std::logic_error("Could not dynamically add an empty graph.");
+    }
+
+    for (const auto &node : nodes_)
+        node->action_ = "add";
+
+    static std::atomic<unsigned long long> next_link_id{0};
+    auto add_link_streams =
+        [&](const bmf_sdk::JsonParam &link_config, bool is_input) {
+            if (link_config.json_value_.is_null())
+                return;
+            if (!link_config.json_value_.is_object() ||
+                !link_config.json_value_.contains("alias") ||
+                !link_config.json_value_["alias"].is_string() ||
+                link_config.json_value_["alias"].get<std::string>().empty() ||
+                !link_config.json_value_.contains("streams") ||
+                !link_config.json_value_["streams"].is_number_integer()) {
+                throw std::logic_error(
+                    "Dynamic link configuration must contain a non-empty "
+                    "string 'alias' and an integer 'streams'.");
+            }
+
+            const int stream_count =
+                link_config.json_value_["streams"].get<int>();
+            if (stream_count < 0)
+                throw std::logic_error(
+                    "Dynamic link stream count cannot be negative.");
+
+            std::shared_ptr<RealNode> target_node;
+            if (is_input) {
+                auto node = std::find_if(
+                    nodes_.begin(), nodes_.end(),
+                    [](const std::shared_ptr<RealNode> &candidate) {
+                        return candidate->inputStreams_.empty();
+                    });
+                if (node == nodes_.end())
+                    throw std::logic_error(
+                        "Could not find the input node in the update graph.");
+                target_node = *node;
+            } else {
+                target_node = nodes_.back();
+            }
+
+            const auto link_id = next_link_id.fetch_add(1);
+            const auto alias =
+                link_config.json_value_["alias"].get<std::string>();
+            for (int i = 0; i < stream_count; ++i) {
+                const auto name = alias + "." + std::to_string(link_id) + "_" +
+                                  std::to_string(i);
+                if (is_input) {
+                    target_node->inputStreams_.emplace_back(
+                        std::make_shared<RealStream>(
+                            shared_from_this(), name, "", name));
+                } else {
+                    target_node->outputStreams_.emplace_back(
+                        std::make_shared<RealStream>(
+                            target_node, name, "", name));
+                }
+            }
+        };
+
+    add_link_streams(outputs, false);
+    add_link_streams(inputs, true);
+}
+
+void RealGraph::DynamicRemove(const bmf_sdk::JsonParam &node_config) {
+    if (!node_config.json_value_.is_object() ||
+        !node_config.json_value_.contains("alias") ||
+        !node_config.json_value_["alias"].is_string() ||
+        node_config.json_value_["alias"].get<std::string>().empty()) {
+        throw std::logic_error(
+            "Invalid dynamic remove configuration: missing alias.");
+    }
+
+    const auto alias =
+        node_config.json_value_["alias"].get<std::string>();
+    auto remove_node = AddModule(alias, node_config, {}, alias, CPP, "", "",
+                                 Immediate, 0);
+    remove_node->action_ = "remove";
+}
+
+void RealGraph::DynamicReset(const bmf_sdk::JsonParam &node_config) {
+    if (!node_config.json_value_.is_object() ||
+        !node_config.json_value_.contains("alias") ||
+        !node_config.json_value_["alias"].is_string() ||
+        node_config.json_value_["alias"].get<std::string>().empty()) {
+        throw std::logic_error(
+            "Invalid dynamic reset configuration: missing alias.");
+    }
+
+    const auto alias =
+        node_config.json_value_["alias"].get<std::string>();
+    auto reset_node = AddModule(alias, node_config, {}, "", CPP, "", "",
+                                Immediate, 0);
     reset_node->action_ = "reset";
 }
 
@@ -704,7 +824,7 @@ void Node::AddCallback(long long key,
     baseP_->AddCallback(key, callbackInstance);
 }
 
-void Node::AddCallback(long long key, 
+void Node::AddCallback(long long key,
                        std::function<bmf_sdk::CBytes(bmf_sdk::CBytes)> callback) {
     baseP_->AddCallback(key, callback);
 }
@@ -847,11 +967,21 @@ void Graph::Start(std::vector<Stream> &generateStreams, bool dumpGraph,
     graph_->Start(generateRealStreams, dumpGraph, needMerge);
 }
 
-int Graph::Update(const Graph& update_graph) {
+int Graph::Update(const Graph &update_graph) {
     return graph_->Update(update_graph.graph_);
 }
 
-void Graph::DynamicReset(const bmf_sdk::JsonParam& node_config) {
+void Graph::DynamicAdd(const Node &module_node,
+                       const bmf_sdk::JsonParam &inputs,
+                       const bmf_sdk::JsonParam &outputs) {
+    graph_->DynamicAdd(module_node.baseP_, inputs, outputs);
+}
+
+void Graph::DynamicRemove(const bmf_sdk::JsonParam &node_config) {
+    graph_->DynamicRemove(node_config);
+}
+
+void Graph::DynamicReset(const bmf_sdk::JsonParam &node_config) {
     graph_->DynamicReset(node_config);
 }
 

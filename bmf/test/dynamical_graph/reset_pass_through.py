@@ -18,6 +18,11 @@ class reset_pass_through(Module):
         print("---Dynamical reset the option---")
         print(opt_reset)
         print("--------------------------------")
+        if opt_reset is not None:
+            marker_path = opt_reset.get("reset_marker_path")
+            if marker_path:
+                with open(marker_path, "w", encoding="utf-8") as marker:
+                    marker.write("reset")
 
     def process(self, task):
         for (input_id, input_packets) in task.get_inputs().items():

@@ -66,7 +66,7 @@ bmf_Packet bmf_graph_poll_output_stream_packet(bmf_BMFGraph graph,
 }
 
 int bmf_graph_update(bmf_BMFGraph graph, char const *config, bool is_path) {
-    BMF_PROTECT(graph->update(config, is_path); return 0;)
+    BMF_PROTECT(return graph->update(config, is_path);)
     return -1;
 }
 

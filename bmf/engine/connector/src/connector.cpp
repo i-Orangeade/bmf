@@ -56,10 +56,10 @@ BMFGraph::BMFGraph(const std::string &graph_config, bool is_path,
 
     // find subgraph and merge into while graph
     bmf_engine::Optimizer::subgraph_preprocess(g_config, created_modules);
-    
+
     // add split node and assemble node for distributed nodes
     bmf_engine::Optimizer::process_distributed_node(g_config.nodes);
-    
+
     // catch graph config at this time for further comparison.
     auto ori_g_config = g_config;
 
@@ -148,7 +148,7 @@ void BMFGraph::start() {
     internal::ConnectorMapping::GraphInstanceMapping().get(graph_uid_)->start();
 }
 
-void BMFGraph::update(const std::string &graph_config, bool is_path) {
+int BMFGraph::update(const std::string &graph_config, bool is_path) {
     json_t graph_json;
     if (is_path) {
         if (!fs::exists(graph_config))
@@ -160,7 +160,7 @@ void BMFGraph::update(const std::string &graph_config, bool is_path) {
     }
     auto g_config = bmf_engine::GraphConfig(graph_json);
 
-    internal::ConnectorMapping::GraphInstanceMapping()
+    return internal::ConnectorMapping::GraphInstanceMapping()
         .get(graph_uid_)
         ->update(g_config);
 }

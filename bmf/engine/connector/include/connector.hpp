@@ -67,7 +67,7 @@ class BMF_ENGINE_API BMFGraph {
     /*
      * @brief Update a dynamical BMF Graph instance.
      */
-    void update(const std::string &config, bool is_path);
+    int update(const std::string &config, bool is_path);
 
     /*
      * @brief Wait a running BMF Graph instance stopping.
