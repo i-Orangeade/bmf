@@ -94,6 +94,7 @@ TraceLogger::TraceLogger(int queue_size, bool loop_mode)
     std::stringstream tss;
     tss << tid;
     thread_name_ = tss.str();
+    BMFLOG(BMF_DEBUG) << "Creating tracelogger with buffer size of " << queue_size << std::endl;
 
     // Set the process name
     pid_t pid = getpid();
@@ -131,13 +132,15 @@ void TraceLogger::end() {
 int TraceLogger::register_queue(std::string process_name,
                                 std::string thread_name) {
     // Assign buffer for the thread
-    queue_map_[thread_count_].process_name = process_name;
-    queue_map_[thread_count_].thread_name = thread_name;
-    running_count_++;
-    thread_count_++;
-    if (thread_count_ == queue_map_.size())
-        thread_count_ = 0; // Back to first buffer to reuse buffer
-    return thread_count_;
+    const int prev_thread_count = thread_count_.load(std::memory_order_relaxed);
+    queue_map_[prev_thread_count].process_name = process_name;
+    queue_map_[prev_thread_count].thread_name = thread_name;
+
+    running_count_.fetch_add(1, std::memory_order_relaxed);
+    thread_count_.fetch_add(1, std::memory_order_relaxed);
+    if (thread_count_.load(std::memory_order_relaxed) == queue_map_.size())
+        thread_count_.store(0, std::memory_order_relaxed); // Back to first buffer to reuse buffer
+    return prev_thread_count;
 }
 
 void TraceLogger::close_queue(int thread_id) {
@@ -232,6 +235,7 @@ ThreadTrace::ThreadTrace() {
         // Register with Tracer
         thread_id_ = TraceLogger::instance()->register_queue(process_name_,
                                                              thread_name_);
+        BMFLOG(BMF_DEBUG) << "Registering queue " << thread_name_ << " with local id " << thread_id_ << std::endl;
     }
 }
 
@@ -284,7 +288,7 @@ void TraceLogger::format_logs(bool include_info) {
 
     std::string categories[] = {"INTERLATENCY", "PROCESSING", "SCHEDULE",
                                 "QUEUE_INFO",   "THROUGHPUT", "CUSTOM",
-                                "TRACE_START",  "GRAPH_START"};
+                                "TRACE_START",  "GRAPH_START", "GRAPH_END"};
 
     std::string phases[] = {"i", "B", "E"};
 
